@@ -1,0 +1,3 @@
+useDynLib(JMbayesCpp)
+importFrom(Rcpp, evalCpp)
+exportPattern("^[[:alpha:]]+")
