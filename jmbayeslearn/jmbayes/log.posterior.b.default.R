@@ -10,7 +10,6 @@ log.posterior.b.default <- function (b, y, Mats, ii) {
   log.p.yb <- dnorm_cpp(y[id.i], X.i, betas.new, Z.i, b, sigma.new)
   log.p.b <- dmvnorm_cpp(t(b), t(rep(0, ncol(Z.i))), D.new, logd = T)
   
-  
   MM <- Mats[[ii]]
   
   W_time_independent <- if(!is.null(W)){

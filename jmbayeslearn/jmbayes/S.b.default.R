@@ -8,6 +8,8 @@ function (t, b, ii, Mats, log = FALSE) {
   idT.i <- idT %in% ii
   ids.i <- ids %in% ii
   
+  wk <- Mats$wk
+  
   W_time_independent <- if(!is.null(W)){
     W[ii, , drop = FALSE]
   }else{

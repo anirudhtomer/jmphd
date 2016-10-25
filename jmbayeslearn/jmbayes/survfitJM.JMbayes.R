@@ -118,8 +118,9 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
                       Dalphas = Dalphas, shapes = shapes, Bs.gammas = Bs.gammas, D = D)
   list.thetas <- list.thetas[!sapply(list.thetas, is.null)]
   thetas <- unlist(as.relistable(list.thetas))
-  environment(S.b.allTimePoints) <- environment(log.posterior.b) <- environment(S.b) <- environment(logh.b) <- environment()
-  environment(log.posterior.b.default) <- environment(log.posterior.b.normal) <- environment(hMats) <- environment(ModelMats) <- environment()
+  environment(log.posterior.b.default) <- environment(log.posterior.b.normal) <- environment(log.posterior.b) <- environment(S.b) <- environment(S.b.default) <- environment(logh.b) <- environment()
+  environment(hMats) <- environment(ModelMats) <- environment()
+  environment(rmvt)<- environment()
   
   # construct model matrices to calculate the survival functions
   obs.times.surv <- split(data.id[[timeVar]], idT)
@@ -131,39 +132,34 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
   if (type != "SurvProb")
     hazMats <- hMats(Time)
   
-  
-  
   # calculate the Empirical Bayes estimates and their (scaled) variance
-  modes.b <- matrix(0, n.tp, ncz)
-  invVars.b <- Vars.b <- vector("list", n.tp)
-  
-  
-  logPostWrapper = NULL
-  object$Funs$isResponseNormalDistributed <- object$Funs$areRENormalDistributed <- TRUE
-  object$Funs$noDefaultTransFunc<-FALSE
-  empBayesOptimFunc <- if(object$Funs$isResponseNormalDistributed & 
-                          object$Funs$areRENormalDistributed){
+  logPostWrapper <- NULL
+  S.b.wrapper <- NULL
+  empBayesOptimFunc <- if(object$Funs$isRespNormalDist & object$Funs$areRENormalDist){
     
-    if(object$Funs$noDefaultTransFunc==TRUE & estimateWeightFun==FALSE){
+    if(object$Funs$areTransFuncUsed==FALSE & estimateWeightFun==FALSE & param=="td-value"){
       logPostWrapper <- log.posterior.b.default
+      S.b.wrapper <- S.b.default
       function(b, y, tt, mm, i){
         -log.posterior.b.default(b, y, Mats=tt, ii=i)
       }
     }else{
       logPostWrapper <- log.posterior.b.normal
+      S.b.wrapper <- S.b
       function(b, y, tt, mm, i){
         -log.posterior.b.normal(b, y, Mats=tt, ii=i)
       }
     }
     
   }else{
-    logPostWrapper <- log.posterior.b.default
+    logPostWrapper <- log.posterior.b
+    S.b.wrapper <- S.b
     function (b, y, tt, mm, i){
       -log.posterior.b(b, y, Mats = tt, ii = i)
     }
   }
   
-  start = if (is.null(init.b)){
+  start <- if (is.null(init.b)){
     rep(0, ncz)
   }
   else{
@@ -179,11 +175,13 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
   shapes.new <- shapes
   Bs.gammas.new <- Bs.gammas
 
-
-  empBayesEstimates = foreach(i=1:n.tp, .packages = c("JMbayesCpp"),
+  modes.b <- matrix(0, n.tp, ncz)
+  invVars.b <- Vars.b <- vector("list", n.tp)
+  
+  empBayesEstimates <- foreach(i=1:n.tp, .packages = c("JMbayesCpp"),
                               .export = c("idT", "fastSumID")) %dopar%{
 
-    opt = try(optim(start, empBayesOptimFunc, y = y, tt = survMats.last, i = i,
+    opt <- try(optim(start, empBayesOptimFunc, y = y, tt = survMats.last, i = i,
                      method = "BFGS", hessian = TRUE), silent = FALSE)
 
     if (inherits(opt, "try-error")) {
@@ -198,50 +196,18 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
 
     list(par = opt$par, invVar = opt$hessian/scale, Var = solve(opt$hessian)*scale)
   }
+  
+  modes.b <- t(sapply(empBayesEstimates, FUN = function(x){x$par}))
+  invVars.b <- lapply(empBayesEstimates, FUN = function(x){x$invVar})
+  Vars.b <- lapply(empBayesEstimates, FUN = function(x){x$Var})
 
-  modes.b = t(sapply(empBayesEstimates, FUN = function(x){x$par}))
-  invVars.b = lapply(empBayesEstimates, FUN = function(x){x$invVar})
-  Vars.b = lapply(empBayesEstimates, FUN = function(x){x$Var})
-  
-  
-
-  
-  # for (i in seq_len(n.tp)) {
-  #     betas.new <- betas
-  #     sigma.new <- sigma
-  #     D.new <- D
-  #     gammas.new <- gammas
-  #     alphas.new <- alphas
-  #     Dalphas.new <- Dalphas
-  #     shapes.new <- shapes
-  #     Bs.gammas.new <- Bs.gammas
-  # 
-  #     start <- if (is.null(init.b)) rep(0, ncz) else init.b[i, ]
-  #     opt <- try(optim(start, empBayesOptimFunc, y = y, tt = survMats.last, i = i,
-  #         method = "BFGS", hessian = TRUE), silent = TRUE)
-  #     if (inherits(opt, "try-error")) {
-  #         gg <- function (b, y, tt, mm, i) cd(b, empBayesOptimFunc, y = y, tt = tt, i = i)
-  #         opt <- optim(start, empBayesOptimFunc, gg, y = y, tt = survMats.last,
-  #             i = i, method = "BFGS", hessian = TRUE,
-  #             control = list(parscale = rep(0.1, ncz)))
-  #     }
-  #     modes.b[i, ] <- opt$par
-  #     invVars.b[[i]] <- opt$hessian/scale
-  #     Vars.b[[i]] <- scale * solve(opt$hessian)
-  # }
-  # 
-  
-  
-  
-  
-  
   if (!simulate) {
     res <- vector("list", n.tp)
     for (i in seq_len(n.tp)) {
       S.last <- S.b(last.time[i], modes.b[i, ], i, survMats.last[[i]])
       S.pred <- numeric(length(times.to.pred[[i]]))
       for (l in seq_along(S.pred))
-        S.pred[l] <- S.b(times.to.pred[[i]][l], modes.b[i, ], i, survMats[[i]][[l]])
+        S.pred[l] <- S.b.wrapper(times.to.pred[[i]][l], modes.b[i, ], i, survMats[[i]][[l]])
       res[[i]] <- cbind(times = times.to.pred[[i]], predSurv = weight[i] * S.pred / S.last)
       rownames(res[[i]]) <- seq_along(S.pred) 
     }
@@ -249,7 +215,10 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
     set.seed(seed)
     out <- vector("list", M)
     success.rate <- matrix(FALSE, M, n.tp)
-   
+
+    b.old <- b.new <- modes.b
+    if (n.tp == 1)
+      dim(b.old) <- dim(b.new) <- c(1L, ncz)
     mcmc <- object$mcmc
     mcmc <- mcmc[names(mcmc) != "b"]
     if (M > nrow(mcmc$betas)) {
@@ -258,6 +227,7 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
       out <- vector("list", M)
       success.rate <- matrix(FALSE, M, n.tp)
     }
+    
     samples <- sample(nrow(mcmc$betas), M)
     mcmc[] <- lapply(mcmc, function (x) x[samples, , drop = FALSE])
     proposed.b <- mapply(rmvt, mu = split(modes.b, row(modes.b)), Sigma = Vars.b, 
@@ -272,17 +242,14 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
       logHaz <- logh.b(modes.b, hazMats)
     }
 
-    b.old <- b.new <- modes.b
-    if (n.tp == 1)
-      dim(b.old) <- dim(b.new) <- c(1L, ncz)
-    
+    seeds = matrix(1:(M*n.tp), nrow=M, ncol=n.tp)
 
-    timestart = Sys.time()
-    mcmcResult <- foreach(i=1:n.tp, .export = c("idT","dmvt", "fastSumID")) %dopar%{
+    mcmcResult <- foreach(i=1:n.tp, .export = c("idT","dmvt", "fastSumID"),
+                          .packages = "JMbayes") %dopar%{
 
-      numberofPredictions = length(times.to.pred[[i]])
-      successRate = rep(FALSE, M)
-      predictions = vector("list", M)
+      numberofPredictions <- length(times.to.pred[[i]])
+      successRate <- rep(FALSE, M)
+      predictions <- vector("list", M)
       b.old <- b.new <- modes.b[i, ]
 
       for (m in 1:M){
@@ -314,6 +281,8 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
         dmvt.prop <- dmvt.proposed[[i]][m]
         a <- min(exp(logPostWrapper(p.b, y, survMats.last, ii = i) + dmvt.old -
                        logPostWrapper(b.old, y, survMats.last, ii = i) - dmvt.prop), 1)
+        
+        set.seed(seeds[m,i])
         ind <- runif(1) <= a
         successRate[m] <- ind
         if (!is.na(ind) && ind){
@@ -321,16 +290,13 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
         }
 
         # Step 3: compute Pr(T > t_k | T > t_{k - 1}; theta.new, b.new)
-        logS.last <- S.b(last.time[i], b.new, i, survMats.last[[i]],
+        logS.last <- S.b.wrapper(last.time[i], b.new, i, survMats.last[[i]],
                          log = TRUE)
 
-        predictions[[m]] = vector("numeric", numberofPredictions)
+        predictions[[m]] <- vector("numeric", numberofPredictions)
 
-        # predictions[[m]] <- S.b.allTimePoints(times.to.pred[[i]], b.new, i,
-        #                                       survMats[[i]], log=T)        
-        
         for (l in 1:numberofPredictions)
-          predictions[[m]][l] <- S.b(times.to.pred[[i]][l], b.new, i,
+          predictions[[m]][l] <- S.b.wrapper(times.to.pred[[i]][l], b.new, i,
                               survMats[[i]][[l]], log = TRUE)
         
         if (type != "SurvProb") {
@@ -351,10 +317,9 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
       list(successRate = successRate, predictions = predictions)
     }
 
-    print(Sys.time()-timestart)
-    success.rate = sapply(mcmcResult, FUN = function(x){x$successRate})
+    success.rate <- sapply(mcmcResult, FUN = function(x){x$successRate})
 
-    out = lapply(1:M, FUN=function(mcIterNum){lapply(1:n.tp, function(subNum){mcmcResult[[subNum]]$predictions[[mcIterNum]]})})
+    out <- lapply(1:M, FUN=function(mcIterNum){lapply(1:n.tp, function(subNum){mcmcResult[[subNum]]$predictions[[mcIterNum]]})})
 
 
     res <- vector("list", n.tp)
@@ -398,6 +363,7 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
     res$full.results <- out
     res$success.rate <- success.rate
   }
+  
   if (simulate) rm(list = ".Random.seed", envir = globalenv())
   class(res) <- "survfit.JMbayes"
   return(res)

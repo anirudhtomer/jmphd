@@ -2,13 +2,9 @@ library(devtools)
 library(Rcpp)
 library(RcppArmadillo)
 
-setwd("C:/Users/838035/Dropbox/PhD/src/testing/")
-setwd("D:/Dropbox/PhD/src/testing/")
+setwd(choose.dir())
 
 RcppArmadillo.package.skeleton("JMbayesCpp")
-
-setwd("C:/Users/838035/Dropbox/PhD/src/testing/JMbayesCpp")
-setwd("D:/Dropbox/PhD/src/testing/JMbayesCpp")
 
 compileAttributes(pkgdir = ".", verbose = getOption("verbose"))
 

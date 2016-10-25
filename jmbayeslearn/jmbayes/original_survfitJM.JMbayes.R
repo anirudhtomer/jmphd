@@ -135,6 +135,7 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
     # calculate the Empirical Bayes estimates and their (scaled) variance
     modes.b <- matrix(0, n.tp, ncz)
     invVars.b <- Vars.b <- vector("list", n.tp)
+
     for (i in seq_len(n.tp)) {
       betas.new <- betas
       sigma.new <- sigma
@@ -184,6 +185,7 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
         out <- vector("list", M)
         success.rate <- matrix(FALSE, M, n.tp)
       }
+      
       samples <- sample(nrow(mcmc$betas), M)
       mcmc[] <- lapply(mcmc, function (x) x[samples, , drop = FALSE])
       proposed.b <- mapply(rmvt, mu = split(modes.b, row(modes.b)), Sigma = Vars.b, 
@@ -193,8 +195,7 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
                               Sigma = Vars.b, MoreArgs = list(df = 4, log = TRUE), 
                               SIMPLIFY = FALSE)
       
-      
-  #    timestart = Sys.time()
+      seeds = matrix(1:(M*n.tp), nrow=M, ncol=n.tp)
       
       for (m in 1:M) {
         # Step 1: extract parameter values
@@ -223,6 +224,8 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
           dmvt.prop <- dmvt.proposed[[i]][m]
           a <- min(exp(log.posterior.b(p.b, y, survMats.last, ii = i) + dmvt.old - 
                          log.posterior.b(b.old[i, ], y, survMats.last, ii = i) - dmvt.prop), 1)
+          
+          set.seed(seeds[m,i])
           ind <- runif(1) <= a
           success.rate[m, i] <- ind
           if (!is.na(ind) && ind)
@@ -244,8 +247,6 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
         b.old <- b.new
         out[[m]] <- SS
       }
-      
-      #print(Sys.time()-timestart)
       
       res <- vector("list", n.tp)
       for (i in seq_len(n.tp)) {
@@ -286,6 +287,7 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
     res$full.results <- out
     res$success.rate <- success.rate
   }
+  
   if (simulate) rm(list = ".Random.seed", envir = globalenv())
   class(res) <- "survfit.JMbayes"
   return(res)

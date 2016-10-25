@@ -37,6 +37,4 @@ tf2 = function(x, data) {
 
 jointFit.pbc15 = update(jointFit.pbc12, transFun = list("value" = tf1, "extra" = tf2))
 
-ND <- pbc2[pbc2$id == 2, ]
 
-sfit.pbc15 = survfitJM(jointFit.pbc15, newdata = ND)
