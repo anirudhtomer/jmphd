@@ -5,6 +5,8 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
                                log = FALSE, scale = 1.6, weight = rep(1, nrow(newdata)), 
                                init.b = NULL, seed = 1L, ...) {
   
+  DOPAR_CUTOFF = 5
+  
   if (!inherits(object, "JMbayes"))
     stop("Use only with 'JMbayes' objects.\n")
   if (!is.data.frame(newdata) || nrow(newdata) == 0L)
@@ -118,9 +120,10 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
                       Dalphas = Dalphas, shapes = shapes, Bs.gammas = Bs.gammas, D = D)
   list.thetas <- list.thetas[!sapply(list.thetas, is.null)]
   thetas <- unlist(as.relistable(list.thetas))
-  environment(log.posterior.b.default) <- environment(log.posterior.b.normal) <- environment(log.posterior.b) <- environment(S.b) <- environment(S.b.default) <- environment(logh.b) <- environment()
+  environment(log.posterior.b.normal)<-environment(log.posterior.b)<-environment(log.posterior.b.default)<-environment(logh.b) <- environment()
+  environment(S.b)<-environment(S.b.default)<-environment()
   environment(hMats) <- environment(ModelMats) <- environment()
-  environment(rmvt)<- environment()
+  environment(computeSurvProbUsingMCMC)<-environment(computeEmpBayesEstimates)<-environment(rmvt)<- environment()
   
   # construct model matrices to calculate the survival functions
   obs.times.surv <- split(data.id[[timeVar]], idT)
@@ -178,23 +181,16 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
   modes.b <- matrix(0, n.tp, ncz)
   invVars.b <- Vars.b <- vector("list", n.tp)
   
-  empBayesEstimates <- foreach(i=1:n.tp, .packages = c("JMbayesCpp"),
-                              .export = c("idT", "fastSumID")) %dopar%{
-
-    opt <- try(optim(start, empBayesOptimFunc, y = y, tt = survMats.last, i = i,
-                     method = "BFGS", hessian = TRUE), silent = FALSE)
-
-    if (inherits(opt, "try-error")) {
-      gg <- function (b, y, tt, mm, i){
-        cd(b, empBayesOptimFunc, y = y, tt = tt, i = i)
-      }
-
-      opt <- optim(start, empBayesOptimFunc, gg, y = y, tt = survMats.last,
-                   i = i, method = "BFGS", hessian = TRUE,
-                   control = list(parscale = rep(0.1, ncz)))
+  if(n.tp < DOPAR_CUTOFF){
+    empBayesEstimates <- foreach(i=1:n.tp, .packages = c("JMbayesCpp"),
+                              .export = c("idT", "fastSumID")) %do%{
+      computeEmpBayesEstimates(i)
     }
-
-    list(par = opt$par, invVar = opt$hessian/scale, Var = solve(opt$hessian)*scale)
+  }else{
+    empBayesEstimates <- foreach(i=1:n.tp, .packages = c("JMbayesCpp"),
+                                 .export = c("idT", "fastSumID")) %dopar%{
+      computeEmpBayesEstimates(i)
+    }
   }
   
   modes.b <- t(sapply(empBayesEstimates, FUN = function(x){x$par}))
@@ -242,79 +238,16 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
       logHaz <- logh.b(modes.b, hazMats)
     }
 
-    seeds = matrix(1:(M*n.tp), nrow=M, ncol=n.tp)
-
-    mcmcResult <- foreach(i=1:n.tp, .export = c("idT","dmvt", "fastSumID"),
-                          .packages = "JMbayes") %dopar%{
-
-      numberofPredictions <- length(times.to.pred[[i]])
-      successRate <- rep(FALSE, M)
-      predictions <- vector("list", M)
-      b.old <- b.new <- modes.b[i, ]
-
-      for (m in 1:M){
-        #Step 1: sample theta(l)
-        betas.new <- mcmc$betas[m, ]
-        if (hasScale){
-          sigma.new <- mcmc$sigma[m, ]
-        }
-        if (!is.null(W)){
-          gammas.new <- mcmc$gammas[m, ]
-        }
-        if (param %in% c("td-value", "td-both", "shared-betasRE", "shared-RE")){
-          alphas.new <- mcmc$alpha[m, ]
-        }
-        if (param %in% c("td-extra", "td-both")){
-          Dalphas.new <- mcmc$Dalphas[m, ]
-        }
-        if (estimateWeightFun){
-          shapes.new <- mcmc$shapes[m, ]
-        }
-        D.new <- mcmc$D[m, ]
-        dim(D.new) <- dim(D)
-        Bs.gammas.new <- mcmc$Bs.gammas[m, ]
-
-        #Step 2: sample b(l)
-        p.b <- proposed.b[[i]][m, ]
-        dmvt.old <- dmvt(b.old, modes.b[i, ], invSigma = invVars.b[[i]],
-                         df = 4, log = TRUE)
-        dmvt.prop <- dmvt.proposed[[i]][m]
-        a <- min(exp(logPostWrapper(p.b, y, survMats.last, ii = i) + dmvt.old -
-                       logPostWrapper(b.old, y, survMats.last, ii = i) - dmvt.prop), 1)
-        
-        set.seed(seeds[m,i])
-        ind <- runif(1) <= a
-        successRate[m] <- ind
-        if (!is.na(ind) && ind){
-          b.new <- p.b
-        }
-
-        # Step 3: compute Pr(T > t_k | T > t_{k - 1}; theta.new, b.new)
-        logS.last <- S.b.wrapper(last.time[i], b.new, i, survMats.last[[i]],
-                         log = TRUE)
-
-        predictions[[m]] <- vector("numeric", numberofPredictions)
-
-        for (l in 1:numberofPredictions)
-          predictions[[m]][l] <- S.b.wrapper(times.to.pred[[i]][l], b.new, i,
-                              survMats[[i]][[l]], log = TRUE)
-        
-        if (type != "SurvProb") {
-          predictions[[m]] <- event[i] * logHaz[i] + predictions[[m]]
-        }
-
-        predictions[[m]] <- if(log){
-          predictions[[m]] - logS.last
-        }else{
-          exp(predictions[[m]] - logS.last)
-        }
-
-        predictions[[m]] <- predictions[[m]] * weight[i]
-
-        b.old <- b.new
+    if(n.tp < DOPAR_CUTOFF){
+      mcmcResult <- foreach(i=1:n.tp, .export = c("idT","dmvt", "fastSumID"),
+                            .packages = "JMbayesCpp") %do% {
+        computeSurvProbUsingMCMC(i)
       }
-
-      list(successRate = successRate, predictions = predictions)
+    }else{
+      mcmcResult <- foreach(i=1:n.tp, .export = c("idT","dmvt", "fastSumID"),
+                            .packages = "JMbayesCpp") %dopar% {
+        computeSurvProbUsingMCMC(i)
+      }
     }
 
     success.rate <- sapply(mcmcResult, FUN = function(x){x$successRate})
@@ -367,5 +300,96 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
   if (simulate) rm(list = ".Random.seed", envir = globalenv())
   class(res) <- "survfit.JMbayes"
   return(res)
+}
+
+computeSurvProbUsingMCMC = function(i){
+  
+  numberofPredictions <- length(times.to.pred[[i]])
+  successRate <- rep(FALSE, M)
+  predictions <- vector("list", M)
+  b.old <- b.new <- modes.b[i, ]
+  
+  #Uncool hack for now
+  parentEnv <- parent.env(environment())
+  
+  for (m in 1:M){
+    #Step 1: sample theta(l)
+    parentEnv$betas.new <- mcmc$betas[m, ]
+    if (hasScale){
+      parentEnv$sigma.new <- mcmc$sigma[m, ]
+    }
+    if (!is.null(W)){
+      parentEnv$gammas.new <- mcmc$gammas[m, ]
+    }
+    if (param %in% c("td-value", "td-both", "shared-betasRE", "shared-RE")){
+      parentEnv$alphas.new <- mcmc$alpha[m, ]
+    }
+    if (param %in% c("td-extra", "td-both")){
+      parentEnv$Dalphas.new <- mcmc$Dalphas[m, ]
+    }
+    if (estimateWeightFun){
+      parentEnv$shapes.new <- mcmc$shapes[m, ]
+    }
+    parentEnv$D.new <- mcmc$D[m, ]
+    dim(parentEnv$D.new) <- dim(D)
+    parentEnv$Bs.gammas.new <- mcmc$Bs.gammas[m, ]
+    
+    #Step 2: sample b(l)
+    p.b <- proposed.b[[i]][m, ]
+    dmvt.old <- dmvt(b.old, modes.b[i, ], invSigma = invVars.b[[i]],
+                     df = 4, log = TRUE)
+    dmvt.prop <- dmvt.proposed[[i]][m]
+    a <- min(exp(logPostWrapper(p.b, y, survMats.last, ii = i) + dmvt.old -
+                   logPostWrapper(b.old, y, survMats.last, ii = i) - dmvt.prop), 1)
+    
+    ind <- runif(1) <= a
+    successRate[m] <- ind
+    if (!is.na(ind) && ind){
+      b.new <- p.b
+    }
+    
+    # Step 3: compute Pr(T > t_k | T > t_{k - 1}; theta.new, b.new)
+    logS.last <- S.b.wrapper(last.time[i], b.new, i, survMats.last[[i]],
+                             log = TRUE)
+    
+    predictions[[m]] <- vector("numeric", numberofPredictions)
+    
+    for (l in 1:numberofPredictions)
+      predictions[[m]][l] <- S.b.wrapper(times.to.pred[[i]][l], b.new, i,
+                                         survMats[[i]][[l]], log = TRUE)
+    
+    if (type != "SurvProb") {
+      predictions[[m]] <- event[i] * logHaz[i] + predictions[[m]]
+    }
+    
+    predictions[[m]] <- if(log){
+      predictions[[m]] - logS.last
+    }else{
+      exp(predictions[[m]] - logS.last)
+    }
+    
+    predictions[[m]] <- predictions[[m]] * weight[i]
+    
+    b.old <- b.new
+  }
+  
+  list(successRate = successRate, predictions = predictions)
+}
+
+computeEmpBayesEstimates = function(i){
+  opt <- try(optim(start, empBayesOptimFunc, y = y, tt = survMats.last, i = i,
+                   method = "BFGS", hessian = TRUE), silent = FALSE)
+  
+  if (inherits(opt, "try-error")) {
+    gg <- function (b, y, tt, mm, i){
+      cd(b, empBayesOptimFunc, y = y, tt = tt, i = i)
+    }
+    
+    opt <- optim(start, empBayesOptimFunc, gg, y = y, tt = survMats.last,
+                 i = i, method = "BFGS", hessian = TRUE,
+                 control = list(parscale = rep(0.1, ncz)))
+  }
+  
+  list(par = opt$par, invVar = opt$hessian/scale, Var = solve(opt$hessian)*scale)
 }
  

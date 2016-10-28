@@ -52,7 +52,11 @@ log.posterior.b <- function (b, y, Mats, ii) {
     } else 0
     Vi <- exp(c(W2s %*% Bs.gammas.new) + tt)
     log.survival <- - sum(exp(eta.tw) * P * fastSumID(wk * Vi, idT))
+    
+    
+    
     if (all(st == 0))
         log.survival <- 1
+    
     log.p.yb + log.survival + log.p.b
 }

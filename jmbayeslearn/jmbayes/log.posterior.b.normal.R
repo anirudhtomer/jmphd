@@ -40,15 +40,15 @@ log.posterior.b.normal <- function (b, y, Mats, ii) {
     if(param=="td-both"){
       Ys <- transFun.value(XbetaZb_cpp(Xs, betas.new,Zs, b), data.s[ids.i, ])
       Ys.extra <- transFun.extra(XbetaZb_cpp(Xs.extra, betas.new[indFixed],
-                                         Zs.extra, b[indRandom]), data.s[ids.i, ])
+                                             Zs.extra, b[indRandom]), data.s[ids.i, ])
       XbetaZb_cpp(as.matrix(Ys), alphas.new, 
-              as.matrix(Ys.extra), Dalphas.new)
+                  as.matrix(Ys.extra), Dalphas.new)
     }else if(param=="td-value"){
       Ys <- transFun.value(XbetaZb_cpp(Xs, betas.new,Zs, b), data.s[ids.i, ])
       Xbeta_cpp(as.matrix(Ys), alphas.new)
     }else if(param=="td-extra"){
       Ys.extra <- transFun.extra(XbetaZb_cpp(Xs.extra, betas.new[indFixed],
-                                         Zs.extra, b[indRandom]), data.s[ids.i, ])  
+                                             Zs.extra, b[indRandom]), data.s[ids.i, ])  
       Xbeta_cpp(as.matrix(Ys.extra), Dalphas.new)
     }else if(param=="shared-betasRE"){
       rep(sum((betas[indBetas] + b) * alphas.new), length(st))

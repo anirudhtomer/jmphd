@@ -159,7 +159,7 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
       invVars.b[[i]] <- opt$hessian/scale
       Vars.b[[i]] <- scale * solve(opt$hessian)
     }
-    
+
     if (!simulate) {
       res <- vector("list", n.tp)
       for (i in seq_len(n.tp)) {
@@ -195,8 +195,6 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
                               Sigma = Vars.b, MoreArgs = list(df = 4, log = TRUE), 
                               SIMPLIFY = FALSE)
       
-      seeds = matrix(1:(M*n.tp), nrow=M, ncol=n.tp)
-      
       for (m in 1:M) {
         # Step 1: extract parameter values
         betas.new <- mcmc$betas[m, ]
@@ -225,7 +223,6 @@ survfitJM.JMbayes <- function (object, newdata, type = c("SurvProb", "Density"),
           a <- min(exp(log.posterior.b(p.b, y, survMats.last, ii = i) + dmvt.old - 
                          log.posterior.b(b.old[i, ], y, survMats.last, ii = i) - dmvt.prop), 1)
           
-          set.seed(seeds[m,i])
           ind <- runif(1) <= a
           success.rate[m, i] <- ind
           if (!is.na(ind) && ind)
