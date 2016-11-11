@@ -16,10 +16,18 @@ registerDoParallel(cores=detectCores())
 pbc2$status2 = as.numeric(pbc2$status!="alive")
 pbc2.id$status2 = as.numeric(pbc2.id$status != "alive")
 
-lmeFit.pbc1 = lme(log(serBilir) ~ ns(year,2), data=pbc2, random=~ns(year,2) | id)
-coxFit.pbc1 = coxph(Surv(years, status2) ~ drug * age, data = pbc2.id, x = TRUE)
+lmeFit.pbc1 = lme(log(serBilir) ~ ns(year,2) + drug*age, data=pbc2, random=~ns(year,2) | id)
+coxFit.pbc1 <- coxph(Surv(years, status2) ~ drug * age, data=pbc2.id, x = TRUE)
 
 jointFit.pbc1 = jointModelBayes(lmeFit.pbc1, coxFit.pbc1, 
+                                timeVar = "year", n.iter = 300)
+
+
+
+lmeFit.pbc1_1 = lme(log(serBilir) ~ ns(year,2) + edema, data=pbc2, random=~ns(year,2) | id)
+coxFit.pbc1_1 <- coxph(Surv(years, status2) ~ edema, data=pbc2.id, x = TRUE)
+
+jointFit.pbc1_1 = jointModelBayes(lmeFit.pbc1_1, coxFit.pbc1_1, 
                                 timeVar = "year", n.iter = 30000)
 
 dForm = list(fixed = ~0 + dns(year, 2), random = ~0 + dns(year, 2), 
