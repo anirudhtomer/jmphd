@@ -1,5 +1,8 @@
-#PSA score at baseline. all seems grand
-ggplot(data=prias) + geom_histogram(aes(Age))
+########################################
+# Graphs at baseline
+########################################
+ggplot(data=prias) + geom_histogram(aes(Age, fill=diG)) + facet_grid(diDRE~DiscontinuedYesNo)
+ggplot(data=prias) + geom_histogram(aes(Age, fill=diGleason_sum)) + facet_grid(~DiscontinuedYesNo)
 
 #PSA , Gleason and DRE score spaghetti plot
 numSub = 1000
