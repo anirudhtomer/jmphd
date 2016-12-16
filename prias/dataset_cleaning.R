@@ -185,6 +185,8 @@ prias_long$digleason = rep(NA, nrow(prias_long))
 prias_long[!is.na(prias_long$gleason), ]$digleason = ifelse(prias_long[!is.na(prias_long$gleason), ]$gleason<=6, yes="Low", no="High")
 prias_long$digleason = ordered(prias_long$digleason, levels=c("Low", "High"))
 
+prias_long$gleason = as.ordered(prias_long$gleason)
+
 #################################################
 #What to do with these patients (long format data set)???
 #################################################
