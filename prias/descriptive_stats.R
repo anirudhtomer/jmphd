@@ -68,6 +68,14 @@ prias_sub_dataset$gleason_risk=sapply(prias_sub_dataset$gleason, function(gleaso
   }
 }, simplify = T)
 
+#Does the biopsy gleason score always increases
+prias_biopsy = prias_long[!is.na(prias_long$biopsy_number), ]
+is_unsorted_gleason = sapply(unique(prias_biopsy$P_ID), function(pid){
+  is.unsorted(prias_biopsy[prias_biopsy$P_ID==pid, ]$gleason)
+}, simplify = T)
+
+pid_unsorted_gleason = unique(prias_biopsy$P_ID)[(1:length(is_unsorted_gleason))[is_unsorted_gleason]]
+View(prias_biopsy[prias_biopsy$P_ID %in% pid_unsorted_gleason,])
 
 ##########
 #Biopsies per person, impact of less number of biopsies on modeling
