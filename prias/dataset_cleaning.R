@@ -7,6 +7,7 @@ library(ggplot2)
 prias = read.spss(file.choose(), to.data.frame=TRUE)
 colnames(prias)[match("Discontinued", colnames(prias))] = "DiscontinuedType"
 prias$REASO0 = NULL
+prias$Dummy.0 = rep(0, nrow(prias))
 
 long_columns = c(c(15:49), c(50:84), c(85:119), c(120:154), c(159:193))
 
@@ -16,7 +17,7 @@ long_columns = c(c(15:49), c(50:84), c(85:119), c(120:154), c(159:193))
 #15 patients do not have any information and they all have Age=NA
 empty_patients = prias[is.na(prias$Age),]
 
-#Some patients are too young to be real
+#Some patients are too young to be real. So basically remove both empty ones and these patients too
 prias = prias[!is.na(prias$Age) & prias$Age > 5,]
 
 ##############################################
@@ -35,13 +36,15 @@ for(i in 1:nrow(prias)){
 ##############################################
 # Data type cleaning before conversion to long
 ##############################################
-prias$P_ID = as.factor(prias$P_ID)
+prias$P_ID = droplevels(as.factor(prias$P_ID))
 
-prias$Gleason_sum = as.ordered(prias$Gleason_sum)
-prias$Gleason1_2 = as.ordered(prias$Gleason1_2)
-prias$Gleason2_2 = as.ordered(prias$Gleason2_2)
+# DO NOT ATTEMPT THE COMMENTED. THIS GIVES ISSUE WHEN MERGING THIS COLUMN WITH THE OTHER 35 to make a long dataset
+# prias$Gleason_sum = as.ordered(prias$Gleason_sum)
+# prias$Gleason1_2 = as.ordered(prias$Gleason1_2)
+# prias$Gleason2_2 = as.ordered(prias$Gleason2_2)
 
-prias$DiscontinuedYesNo = factor(prias$DiscontinuedYesNo, labels = c("No", "Yes"))
+# DO NOT DO THIS. COMMENTED NOW. For survival analysis we want it in 0,1 form
+# prias$DiscontinuedYesNo = factor(prias$DiscontinuedYesNo, labels = c("No", "Yes"))
 
 levels(prias$DRE) = trimws(levels(prias$DRE))
 prias$DRE = as.ordered(droplevels(prias$DRE))
@@ -54,14 +57,13 @@ levels(prias$Reason_treatment) = trimws(levels(prias$Reason_treatment))
 prias$Reason_treatment[prias$Reason_treatment %in% c("N/A", "")] = NA
 prias$Reason_treatment = droplevels(prias$Reason_treatment)
 
-
 #################################################
 #What to do with these patients (wide format data set)???
 #################################################
 
 ###########
 #Patients who are reported NOT discontinued yet have reasons for discontinuation. No date of discontinuation available
-condition1 = prias$DiscontinuedYesNo=="No" & 
+condition1 = prias$DiscontinuedYesNo==0 & 
   (!is.na(prias$DiscontinuedType) | !is.na(prias$Reason_treatment))
 
 View(prias[condition1, -long_columns])
@@ -71,15 +73,15 @@ prias = prias[!condition1,]
 
 ###########
 #Patients who are reported YES discontinued but don't have date of discontinuation
-condition2 = prias$DiscontinuedYesNo=="Yes" & is.na(prias$Date_discontinued)
+condition2 = prias$DiscontinuedYesNo==1 & is.na(prias$Date_discontinued)
 View(prias[condition2, -long_columns])
 
 #Temporary treatment: Remove them
 prias = prias[!condition2,]
 
 ###########
-#Patients who discontinued but don't have DiscontinuedType and do have reason of treatment
-condition3 = prias$DiscontinuedYesNo=="Yes" & 
+#Patients who discontinued YES but don't have DiscontinuedType yet they do have reason of treatment
+condition3 = prias$DiscontinuedYesNo==1 & 
   is.na(prias$DiscontinuedType) & !is.na(prias$Reason_treatment)
 View(prias[condition3, -long_columns])
 
@@ -88,7 +90,7 @@ prias=prias[!condition3,]
 
 ###########
 #Patients who discontinued but neither have DiscontinuedType nor have reason of treatment
-condition4 = prias$DiscontinuedYesNo=="Yes" & 
+condition4 = prias$DiscontinuedYesNo==1 & 
   is.na(prias$DiscontinuedType) & is.na(prias$Reason_treatment)
 View(prias[condition4, -long_columns])
 
@@ -104,11 +106,15 @@ View(prias[condition5, -long_columns])
 prias=prias[!condition5,]
 
 ###########
-#Patients who Died, took treatment, watchful waiting and reason of treament was lost to follow up
-#This is possible if first the reason of discontinuation column was filled and later the discontinuationt type
+#Patients who Died, took treatment, watchful waiting BUT reason of treament was lost to follow up
+condition6 = prias$Reason_treatment %in% "Lost to FU" & !(prias$DiscontinuedType %in% "Lost to FU")
+View(prias[condition6, -long_columns])
 
-#Temporary treament: Do nothing
+#Temporary treament: Do nothing, because
+#This is possible if first the reason of discontinuation column was filled and later the discontinuation type
 NULL
+
+prias$P_ID = droplevels(prias$P_ID)
 
 #####################################################
 # Create simplified versions of various columns
@@ -116,57 +122,66 @@ NULL
 prias$diDRE = ordered(ifelse(prias$DRE %in% c("T1b", "T1c"), yes = "T1", no = "T2"))
 prias$diGleason_sum = ordered(ifelse(prias$Gleason_sum<=6, yes="Low", no="High"), levels=c("Low", "High"))
 
-#by now everyone has a discontinued type
-prias$event_type = rep("Treatment", nrow(prias))
-prias$event_type[prias$DiscontinuedType %in% c("Lost to FU")] = "Censored"
-prias$event_type[prias$DiscontinuedType %in% c("Died")] = "Death"
+#####################################################
+# Categories for discontinuation
+#####################################################
+#By now, everyone who discontinued has a reason
+any(is.na(prias$DiscontinuedYesNo))
+any(prias$DiscontinuedYesNo==1 & is.na(prias$DiscontinuedType))
 
-################################################
-#Convert wide to long and order by patient id and time
-################################################
+prias$event_type = factor(sapply(1:nrow(prias), function(index){
+  prias_i = prias[index, ]
+  
+  if(prias_i$DiscontinuedYesNo==1){
+    if(prias_i$DiscontinuedType %in% "Lost to FU"){
+      #Reasons are NA, Other, based on protocol and Lost to FU
+      return("Censored")
+    }else if(prias_i$DiscontinuedType %in% "Watchful waiting"){
+      #Reasons are NA, Anxiety, Based on protocol, lost to FU and other 
+      return("Watchful waiting")
+    }else if(prias_i$DiscontinuedType %in% "Died"){
+      if(is.na(prias_i$Reason_treatment)){
+        return("Died-Progression")
+      }else{
+        #Reasons are Other and Lost to FU
+        return("Died-Other")
+      }
+    }else if(prias_i$DiscontinuedType %in% "On request" | prias_i$Reason_treatment %in% c("Anxiety", "On request", "Other")){
+      return("Anxiety/Other/Request")
+    }else{
+      return("Treatment-Progression")
+    }
+  }else{
+    return(NA)
+  }
+}, simplify = T))
+
+
+#################################################
+#################################################
+# Convert wide to long and order by patient id and time
+#################################################
+#################################################
 prias_long=reshape(prias, direction='long', idvar='P_ID', timevar = "visit_number",
-        varying=list(c(15:49), c(50:84), c(85:119), c(120:154), c(159:193)),
-        v.names=c('psa', 'dom', 'gleason', 'dre', 'dummy'))
+        varying=list(c(3,50:84), c(4,15:49), c(5, 120:154), c(8, 85:119), c(194, 159:193)),
+        v.names=c('dom', 'psa', 'dre', 'gleason', 'dummy'))
 prias_long = prias_long[order(prias_long$P_ID, prias_long$dom, na.last = T), ]
-prias_long$visit_number = rep(1:35, length(prias$P_ID))
 prias_long$dummy = factor(prias_long$dummy, labels = c("No", "Yes"))
 
+#Why divide by 10 as well. Because there was an extra 10 in the time value. 
+prias_long$visitTimeDays = unlist(tapply(prias_long$dom, prias_long$P_ID, function(x){(x-x[1])/(24*60*60*10)}))
+prias_long$visitTimeYears = prias_long$visitTimeDays/365
+
 #Some measurements were dummy. i.e. patient didnt turn up. we return psa and dom from sapply
-prias_long[, c("psa", "dom")] = t(sapply(1:nrow(prias_long), FUN = function(rowNum){
-  temp = prias_long[rowNum,]
-  if(!is.na(temp$dummy) & temp$dummy=="No"){
-    return(c(temp$psa, temp$dom))
-  }else{
-    return(c(NA, NA))
-  }
-}))
+condition_long_1 = prias_long$dummy %in% "Yes"
+prias_long$psa[condition_long_1] = NA
+prias_long$dre[condition_long_1] = NA
+prias_long$gleason[condition_long_1] = NA
+prias_long$dom[condition_long_1] = NA
 
-#Gleason scores which are 0 should be counted as NA
-prias_long$gleason = unlist(lapply(prias_long$gleason, FUN = function(gleason){
-  if(!is.na(gleason) && gleason==0){
-    return(NA)
-  }else{
-    return(gleason)
-  }
-}))
-
-#Baseline gleason scores which are 0 should be counted as NA
-prias_long$Gleason_sum = unlist(lapply(prias_long$Gleason_sum, FUN = function(Gleason_sum){
-  if(!is.na(Gleason_sum) && Gleason_sum==0){
-    return(NA)
-  }else{
-    return(Gleason_sum)
-  }
-}))
-
-#PSA scores which are 0 should be counted as NA
-prias_long$psa = unlist(lapply(prias_long$psa, FUN = function(psa){
-  if(!is.na(psa) && psa==0){
-    return(NA)
-  }else{
-    return(psa)
-  }
-}))
+#Gleason scores which are 0 or 1(there is one guy with 1) should be counted as NA
+condition_long_2 = prias_long$gleason %in% c(0,1)
+prias_long$gleason[condition_long_2] = NA
 
 #########################################################
 # Data type cleaning for the long version of the data set
@@ -191,17 +206,21 @@ prias_long$gleason = as.ordered(prias_long$gleason)
 #What to do with these patients (long format data set)???
 #################################################
 
-##########
 #Cases where psa/gleason/dre is available but date of measurement is missing
+condition_long_3 = is.na(prias_long$dom) & (!is.na(prias_long$psa) | !is.na(prias_long$dre) |
+                                              !is.na(prias_long$gleason))
+View(prias_long[condition_long_3,])
+#Temporary solution: remove them for now, otherwise take the date it should have actually been measured
+prias_long = prias_long[!condition_long_3,]
 
-View(prias_long[is.na(prias_long$Date_discontinued) & prias_long$DiscontinuedYesNo %in% c("Yes") &
-                  (!is.na(prias_long$psa) | !is.na(prias_long$dre) |
-                     !is.na(prias_long$gleason)),])
-View(prias_long[is.na(prias_long$dom) & (!is.na(prias_long$psa) | !is.na(prias_long$dre) |
-                                           !is.na(prias_long$gleason)),])
+#Cases where first two measurements have same DOM but different PSA scores. There are two such people
+p_id_dom1dom2same = unique(prias_long$P_ID)[unlist(tapply(prias_long$visitTimeDays, prias_long$P_ID, function(x){sum(x==0, na.rm = T)>1}))]
+View(prias_long[prias_long$P_ID %in% p_id_dom1dom2same,])
 
-#Temporary solution: do nothing...take mean of time using information from other patients
+# No idea how to deal with this one
 
+#Check now if visittimes are sorted for every person. yes they are sorted
+any(unlist(tapply(prias_long$visitTimeDays, prias_long$P_ID, function(x){is.unsorted(x, na.rm = T)})))
 
 #How balanced is the data set. as in how often measurements are taken
 prias_long$diff_dom = unlist(lapply(prias$P_ID, FUN=function(id){

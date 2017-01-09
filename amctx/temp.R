@@ -1,0 +1,1 @@
+mvJointModelBayes(model_pcr_creatinine, coxModel, timeVar = "tx_s_years")

@@ -36,11 +36,14 @@ summary(lm(y~x))
 # Band of residuals
 ####################
 x = 1:100
-x2 = factor(rep(c("A","B", "C", "D"),each=25))
-y = 60 + 20*x + rnorm(length(x), sd= 5)
-y = y + rep(c(40, 60, 100, 110), each=25)
+x3 = (11:110) * 10
+x2 = factor(rep(c("A","B", "C", "D"), each = 25))
+x2_val = rep(c(40, 60, 100, 110), each = 25)
+y = 60 + 20*x + rnorm(length(x), sd= 10)
+y = y + x2_val
+y = y + 10.5 * log(x3) + 6 * x2_val*log(x3)
 
 plot(y~x)
-mod = lm(y~x)
-qplot(y=mod$residuals, mod$fitted.values, geom=c("point", "smooth"))
+mod = lm(y~x2 * I(log(x3)))
+qplot(y=mod$residuals, mod$fitted.values, geom=c("point"))
 

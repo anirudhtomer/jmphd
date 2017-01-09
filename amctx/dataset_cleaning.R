@@ -16,8 +16,15 @@ apply(amctx, MARGIN = 2, FUN= function(x){any(is.na(x))})
 amctx$zis = NULL
 amctx$amctx = as.factor(amctx$amctx)
 
+amctx$years_tx_gl = amctx$days_tx_gl/365
 amctx$tx_s_years = amctx$tx_s_days/365
 amctx$tx_hla = factor(amctx$tx_hla, ordered = T)
+
+#############
+# Subject 316 has negative rec_bmi. make it positive
+###############
+amctx[amctx$amctx == 316, "rec_bmi"] = abs(amctx[amctx$amctx == 316, "rec_bmi"])
+
 
 ##############################################
 # create a data set for survival analysis. 
@@ -28,7 +35,7 @@ amctx$tx_hla = factor(amctx$tx_hla, ordered = T)
 ##############################################
 amctx_cumsum = cumsum(table(amctx$amctx))
 first_row_index_eachsub = c(0,amctx_cumsum[-length(amctx_cumsum)]) + 1
-amctx.id = amctx[first_row_index_eachsub,-c(2,3,4,5, 47)]
+amctx.id = amctx[first_row_index_eachsub,-c(2,3,4,5,6, 48)]
 
 amctx$rec_age_fwp1 = rep(amctx.id$rec_age, table(amctx$amctx))
 
@@ -43,12 +50,10 @@ amctx$gl_failure = factor(amctx$gl_failure, labels = c("no", "yes"))
 # Create two data sets, each for pcr and creatinine
 ##############################################
 amctx_pcr = amctx[amctx$measure=="pcr",]
-amctx_pcr$amctx = droplevels(amctx_pcr$amctx)
-
 amctx_creatinine = amctx[amctx$measure=="creatinine",]
-amctx_creatinine$amctx = droplevels(amctx_creatinine$amctx)
 
-amctx_pcr$visit_num = factor(unlist(sapply(table(amctx_pcr$amctx), function(len){1:len})))
+#as.numeric is used otherwise for the missing person number 346, NA's are added.
+amctx_pcr$visit_num = factor(unlist(sapply(table(as.numeric(amctx_pcr$amctx)), function(len){1:len})))
 amctx_creatinine$visit_num = factor(unlist(sapply(table(amctx_creatinine$amctx), function(len){1:len})))
 
 ##############################################
