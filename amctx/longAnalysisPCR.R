@@ -5,7 +5,7 @@ library(splines)
 library(glmmLasso)
 
 ticks = function(by){
-  scale_x_continuous(breaks = round(seq(0, max(amctx_creatinine$tx_s_days), by = by),0))
+  scale_x_continuous(breaks = round(seq(0, max(amctx_creatinine$tx_s_years), by = by),0))
 }
 
 #####################################################
@@ -13,8 +13,9 @@ ticks = function(by){
 #####################################################
 ggplot(data=amctx_pcr, aes(x=tx_s_days,y=value)) + geom_point() + stat_smooth() + ticks(200) + 
   ylim(0,250)
-ggplot(data=amctx_pcr, aes(x=tx_s_days,y=log(value))) + 
-  geom_point() + stat_smooth() + ticks(200)
+
+ggplot(data=amctx_pcr[1:5000,], aes(x=tx_s_years,y=log(value))) + 
+  geom_line(aes(group=amctx)) + stat_smooth() + ticks(1) + ylab("log(pcr)") +xlab("tx_s_years")
 
 #Firsly log transform is better. 
 #Secondly I could see some striations on that plot at the bottom, which are marked now

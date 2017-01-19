@@ -16,7 +16,10 @@ ggplot(data=amctx_creatinine, aes(x=tx_s_days,y=value, group=amctx)) + geom_line
   facet_grid(.~rec_gender)
 
 ggplot(data=amctx_creatinine, aes(x=tx_s_days,y=value)) + geom_point() + stat_smooth() + ticks(200)
-ggplot(data=amctx_creatinine, aes(x=tx_s_days,y=log(value))) + geom_point() + stat_smooth() + ticks(200)
+
+ggplot(data=amctx_creatinine[1:5000,], aes(x=tx_s_years,y=log(value))) + 
+  geom_line(aes(group=amctx)) + stat_smooth() + ticks(1) + ylab("log(serum creatinine)") + 
+  xlab("tx_s_years")
 
 idList = unique(amctx_creatinine$amctx)
 ggplot(data=amctx_creatinine[amctx$amctx==idList[1],], aes(x=tx_s_days,y=value)) + geom_line()
@@ -140,7 +143,7 @@ ggplot(data=amctx_creatinine, aes(x=fitted,y=residuals)) + geom_point() + stat_s
 ggplot(data=amctx_creatinine, aes(x=fitted,y=residuals^2)) + geom_point() + stat_smooth()
 
 #Final choice
-model_creatinine = lme(data=amctx_creatinine, fixed=log(value)~rec_age + rec_gender +
+model_creatinine = lme(data=amctx_creatinine, fixed=log(value)~rec_age_fwp1 + rec_gender +
                              d_age +  tx_dgf + is_cni + d_bmi + tx_hla + tx_previoustx + 
                          tx_pra + tx_cit + tx_dial_days + tx_dm + rec_bmi + 
                              ns(tx_s_years,knots=c(100, 300, 1000)/365),

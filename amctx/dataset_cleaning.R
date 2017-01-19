@@ -7,6 +7,7 @@ registerDoParallel(cores = 8)
 ##############################################
 amctx = read.csv2(file.choose(), header = T)
 apply(amctx, MARGIN = 2, FUN= function(x){any(is.na(x))})
+amctx = amctx[amctx$amctx!=346, ]
 
 ##############################################
 # Do basic clean up
@@ -86,14 +87,14 @@ any(creatinine_rep)
 View(amctx_creatinine[amctx_creatinine$amctx %in% idList[creatinine_rep],])
 
 ##########################################
-# remove those creatinine measurements which are multiple at the same time for a patient
+# Choose only the first of the creatinine measurements which are multiple at the same time for a patient
 ##########################################
 idList = unique(amctx_creatinine$amctx)
 amctx_creatinine=foreach(i=1:length(idList),.combine='rbind') %dopar%{
   amctx_creatinine_i = amctx_creatinine[amctx_creatinine$amctx == idList[i],]
   
   freq_time = table(amctx_creatinine_i$tx_s_days)
-  amctx_creatinine_i[amctx_creatinine_i$tx_s_days %in% names(freq_time[freq_time==1]),]
+  amctx_creatinine_i[cumsum(freq_time) - freq_time + 1,]
 }
 
 ##########################################
