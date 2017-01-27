@@ -280,6 +280,8 @@ prias_long[!is.na(prias_long$gleason), ]$digleason = ifelse(prias_long[!is.na(pr
 prias_long$digleason = ordered(prias_long$digleason, levels=c("Low", "High"))
 
 prias_long$gleason = as.ordered(prias_long$gleason)
+prias_long = cbind(prias_long, polyage=poly(prias_long$Age,3))
+prias_long = cbind(prias_long, polyvisityears=poly(prias_long$visitTimeYears,3))
 
 # #How balanced is the data set. as in how often measurements are taken
 # prias_long$diff_dom = unlist(lapply(prias$P_ID, FUN=function(id){
